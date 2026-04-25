@@ -1,5 +1,5 @@
 //@version=6
-indicator("Fractal Levels", overlay=true, max_lines_count=500)
+indicator("HTF Fractal Levels", overlay=true, max_lines_count=500)
 
 // --- Налаштування ---
 fractal_period = input.string("5", "Період фракталу", options=["3", "5"])
