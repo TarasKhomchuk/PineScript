@@ -1,0 +1,54 @@
+//@version=6
+indicator("Auto HTF Fractals (Perfect Precision)", overlay=true, max_labels_count=500)
+
+// --- Налаштування ТФ ---
+target_tf = input.timeframe("", "Вибрати ТФ вручну (порожньо для Авто)")
+
+get_auto_tf() =>
+    res = "60"
+    if timeframe.isintraday
+        if timeframe.multiplier <= 1
+            res := "5"
+        else if timeframe.multiplier <= 5
+            res := "15"
+        else if timeframe.multiplier <= 15
+            res := "60"
+        else if timeframe.multiplier <= 60
+            res := "240"
+        else
+            res := "D"
+    else if timeframe.isdaily
+        res := "W"
+    else
+        res := "M"
+    res
+
+chosen_tf = target_tf == "" ? get_auto_tf() : target_tf
+
+// --- Функція для розрахунку на стороні HTF ---
+get_htf_data() =>
+    // Шукаємо фрактал на 1-годинному ТФ
+    is_high = high[4] < high[2] and high[3] < high[2] and high[1] < high[2] and high[0] < high[2]
+    is_low  = low[4] > low[2] and low[3] > low[2] and low[1] > low[2] and low[0] > low[2]
+    
+    // Повертаємо час САМЕ ТОГО бару (2 бари тому), де був пік ціни
+    [is_high ? time[2] : na, is_high ? high[2] : na, is_low ? time[2] : na, is_low ? low[2] : na]
+
+// Використовуємо gap_off та lookahead_on для точної прив'язки часу в минулому
+[h_time, h_val, l_time, l_val] = request.security(syminfo.tickerid, chosen_tf, get_htf_data(), lookahead=barmerge.lookahead_on)
+
+// Відступ ATR
+offset_val = ta.atr(14) * 0.4
+
+// --- Візуалізація ---
+// Використовуємо xloc.bar_time, щоб Pine Script знайшов 15-хвилинну свічку з таким самим часом
+if not na(h_time) and ta.change(h_time) != 0
+    label.new(x=h_time, y=h_val + offset_val, text="", xloc=xloc.bar_time, style=label.style_diamond, color=color.red, size=size.tiny)
+
+if not na(l_time) and ta.change(l_time) != 0
+    label.new(x=l_time, y=l_val - offset_val, text="", xloc=xloc.bar_time, style=label.style_diamond, color=color.green, size=size.tiny)
+
+// Інфо-панель
+// if barstate.islast
+//     var label info = label.new(bar_index, high, "HTF: " + chosen_tf, color=color.new(color.gray, 50), textcolor=color.white, style=label.style_label_down)
+//     label.set_xy(info, bar_index, high)
