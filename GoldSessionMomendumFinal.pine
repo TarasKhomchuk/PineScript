@@ -1,0 +1,56 @@
+// @version=6
+indicator("Gold Strategy: Session Momentum Final", overlay=true)
+
+// --- ВАШ БАЗИСНЫЙ КОД ---
+is_tokyo  = not na(time(timeframe.period, "0100-0200", "GMT+2"))
+is_london = not na(time(timeframe.period, "0900-1000", "GMT+2"))
+is_ny     = not na(time(timeframe.period, "1530-1630", "GMT+2"))
+
+var float th = na, var float tl = na
+var float lh = na, var float ll = na
+var float nh = na, var float nl = na
+
+if ta.change(time("D")) != 0
+    th := na, tl := na, lh := na, ll := na, nh := na, nl := na
+
+if is_tokyo
+    th := na(th) ? high : math.max(th, high)
+    tl := na(tl) ? low  : math.min(tl, low)
+if is_london
+    lh := na(lh) ? high : math.max(lh, high)
+    ll := na(ll) ? low  : math.min(ll, low)
+if is_ny
+    nh := na(nh) ? high : math.max(nh, high)
+    nl := na(nl) ? low  : math.min(nl, low)
+
+curr_hour = hour(time, "GMT+2")
+curr_min  = minute(time, "GMT+2")
+
+show_tokyo = (curr_hour >= 2 and curr_hour < 9) and not na(th)
+plot(show_tokyo ? th : na, "Tokyo High", color.new(color.yellow, 0), 2, plot.style_linebr)
+plot(show_tokyo ? tl : na, "Tokyo Low", color.new(color.yellow, 0), 2, plot.style_linebr)
+
+show_london = (curr_hour >= 10 and (curr_hour < 15 or (curr_hour == 15 and curr_min < 30))) and not na(lh)
+plot(show_london ? lh : na, "London High", color.new(color.blue, 0), 2, plot.style_linebr)
+plot(show_london ? ll : na, "London Low", color.new(color.red, 0), 2, plot.style_linebr)
+
+show_ny = ((curr_hour >= 16 and curr_min >= 30) or curr_hour > 16 or curr_hour < 2) and not na(nh)
+plot(show_ny ? nh : na, "NY High", color.new(color.lime, 0), 2, plot.style_linebr)
+plot(show_ny ? nl : na, "NY Low", color.new(color.orange, 0), 2, plot.style_linebr)
+
+bgcolor(is_tokyo ? color.new(color.yellow, 90) : is_london ? color.new(color.blue, 85) : is_ny ? color.new(color.red, 85) : na)
+
+// --- ТОРГОВАЯ СТРАТЕГИЯ (Исправлено) ---
+rsi = ta.rsi(close, 14)
+
+// Условия пробоев
+lon_buy  = show_london and ta.crossover(close, lh) and rsi < 70
+lon_sell = show_london and ta.crossunder(close, ll) and rsi > 30
+ny_buy   = show_ny and ta.crossover(close, nh) and rsi < 70
+ny_sell  = show_ny and ta.crossunder(close, nl) and rsi > 30
+
+// Визуализация сигналов (исправлены параметры title)
+plotshape(lon_buy,  style=shape.triangleup,   location=location.belowbar, color=color.green,  size=size.small, title="LonBuy")
+plotshape(lon_sell, style=shape.triangledown, location=location.abovebar, color=color.red,    size=size.small, title="LonSell")
+plotshape(ny_buy,   style=shape.triangleup,   location=location.belowbar, color=color.lime,   size=size.small, title="NYBuy")
+plotshape(ny_sell,  style=shape.triangledown, location=location.abovebar, color=color.orange, size=size.small, title="NYSell")
