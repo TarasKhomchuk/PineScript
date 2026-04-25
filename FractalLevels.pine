@@ -1,0 +1,73 @@
+//@version=6
+indicator("Fractal Levels", overlay=true, max_lines_count=500)
+
+// --- Налаштування ---
+fractal_period = input.string("5", "Період фракталу", options=["3", "5"])
+n = fractal_period == "5" ? 2 : 1
+
+get_auto_tf() =>
+    res = "60"
+    if timeframe.isintraday
+        if timeframe.multiplier <= 1
+            res := "5"
+        else if timeframe.multiplier <= 5
+            res := "15"
+        else if timeframe.multiplier <= 15
+            res := "60"
+        else if timeframe.multiplier <= 60
+            res := "240"
+        else
+            res := "D"
+    else if timeframe.isdaily
+        res := "W"
+    else
+        res := "M"
+    res
+
+chosen_tf = get_auto_tf()
+
+// --- Отримання даних HTF (ваша логіка Perfect Precision) ---
+get_htf_data(p) =>
+    is_high = p == 2 ? (high[4] < high[2] and high[3] < high[2] and high[1] < high[2] and high[0] < high[2]) : (high[2] < high[1] and high[0] < high[1])
+    is_low  = p == 2 ? (low[4] > low[2] and low[3] > low[2] and low[1] > low[2] and low[0] > low[2]) : (low[2] > low[1] and low[0] > low[1])
+    [is_high ? time[p] : na, is_high ? high[p] : na, is_low ? time[p] : na, is_low ? low[p] : na]
+
+[h_time, h_val, l_time, l_val] = request.security(syminfo.tickerid, chosen_tf, get_htf_data(n), lookahead=barmerge.lookahead_on)
+
+// --- Масиви для ліній ---
+var line[] active_highs = array.new_line()
+var line[] active_lows  = array.new_line()
+
+// Створення ліній (Світлі та Помітні)
+if not na(h_time) and ta.change(h_time) != 0
+    // Використовуємо Silver (світло-сірий) та товщину 2
+    ln = line.new(x1=h_time, y1=h_val, x2=time, y2=h_val, xloc=xloc.bar_time, color=color.new(color.silver, 40), style=line.style_dotted, extend=extend.right, width=2)
+    array.push(active_highs, ln)
+
+if not na(l_time) and ta.change(l_time) != 0
+    ln = line.new(x1=l_time, y1=l_val, x2=time, y2=l_val, xloc=xloc.bar_time, color=color.new(color.silver, 40), style=line.style_dotted, extend=extend.right, width=2)
+    array.push(active_lows, ln)
+
+// --- Перевірка на зняття (перебиття) ---
+if array.size(active_highs) > 0
+    for i = array.size(active_highs) - 1 to 0
+        ln = array.get(active_highs, i)
+        level = line.get_y1(ln)
+        if high > level
+            line.set_extend(ln, extend.none)
+            line.set_x2(ln, time)
+            // Зняті лінії робимо тоншими та темнішими
+            line.set_color(ln, color.new(color.gray, 60))
+            line.set_width(ln, 1)
+            array.remove(active_highs, i)
+
+if array.size(active_lows) > 0
+    for i = array.size(active_lows) - 1 to 0
+        ln = array.get(active_lows, i)
+        level = line.get_y1(ln)
+        if low < level
+            line.set_extend(ln, extend.none)
+            line.set_x2(ln, time)
+            line.set_color(ln, color.new(color.gray, 60))
+            line.set_width(ln, 1)
+            array.remove(active_lows, i)
