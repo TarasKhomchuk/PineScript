@@ -47,8 +47,3 @@ if not na(h_time) and ta.change(h_time) != 0
 
 if not na(l_time) and ta.change(l_time) != 0
     label.new(x=l_time, y=l_val - offset_val, text="", xloc=xloc.bar_time, style=label.style_diamond, color=color.green, size=size.tiny)
-
-// Інфо-панель
-// if barstate.islast
-//     var label info = label.new(bar_index, high, "HTF: " + chosen_tf, color=color.new(color.gray, 50), textcolor=color.white, style=label.style_label_down)
-//     label.set_xy(info, bar_index, high)
