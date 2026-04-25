@@ -5,7 +5,7 @@ indicator("Auto HTF Fractals (Perfect Precision)", overlay=true, max_labels_coun
 fractal_period = input.string("5", "Період фракталу", options=["3", "5"])
 target_tf = input.timeframe("", "Вибрати ТФ вручну (порожньо для Авто)")
 
-// Визначаємо зміщення (n) та умови залежно від вибору користувача
+// Визначаємо зміщення (n)
 n = fractal_period == "5" ? 2 : 1
 
 get_auto_tf() =>
@@ -29,33 +29,28 @@ get_auto_tf() =>
 
 chosen_tf = target_tf == "" ? get_auto_tf() : target_tf
 
-// --- 1) Розрахунок та відображення ЛОКАЛЬНИХ фракталів (Додаток) ---
+// --- 1) Розрахунок та відображення ЛОКАЛЬНИХ фракталів ---
 loc_high = n == 2 ? (high[4] < high[2] and high[3] < high[2] and high[1] < high[2] and high[0] < high[2]) : (high[2] < high[1] and high[0] < high[1])
 loc_low  = n == 2 ? (low[4] > low[2] and low[3] > low[2] and low[1] > low[2] and low[0] > low[2]) : (low[2] > low[1] and low[0] > low[1])
 
-if loc_high
-    label.new(x=bar_index[n], y=high[n], text="", style=label.style_triangledown, color=color.white, size=size.tiny)
-if loc_low
-    label.new(x=bar_index[n], y=low[n], text="", style=label.style_triangleup, color=color.white, size=size.tiny)
+// Використовуємо plotshape з від’ємним зміщенням (offset), щоб значок був над піковою свічкою
+plotshape(loc_high, style=shape.triangledown, location=location.abovebar, offset=-n, color=color.new(color.white, 25), size=size.tiny, title="Local High Fractal")
+plotshape(loc_low, style=shape.triangleup, location=location.belowbar, offset=-n, color=color.new(color.white, 25), size=size.tiny, title="Local Low Fractal")
 
-
-// --- 2) Розрахунок на стороні HTF (Модифіковано під n) ---
+// --- 2) Розрахунок на стороні HTF ---
 get_htf_data(p) =>
-    // Універсальна умова для HTF
     is_high = p == 2 ? (high[4] < high[2] and high[3] < high[2] and high[1] < high[2] and high[0] < high[2]) : (high[2] < high[1] and high[0] < high[1])
     is_low  = p == 2 ? (low[4] > low[2] and low[3] > low[2] and low[1] > low[2] and low[0] > low[2]) : (low[2] > low[1] and low[0] > low[1])
-    
     [is_high ? time[p] : na, is_high ? high[p] : na, is_low ? time[p] : na, is_low ? low[p] : na]
 
-// Використовуємо оригінальний метод security
 [h_time, h_val, l_time, l_val] = request.security(syminfo.tickerid, chosen_tf, get_htf_data(n), lookahead=barmerge.lookahead_on)
 
-// Відступ ATR
+// Відступ ATR для HTF
 offset_val = ta.atr(14) * 0.4
 
-// --- 3) Візуалізація HTF (Оригінальний код) ---
+// --- 3) Візуалізація HTF (залишаємо label для точності по часу) ---
 if not na(h_time) and ta.change(h_time) != 0
-    label.new(x=h_time, y=h_val + offset_val, text="", xloc=xloc.bar_time, style=label.style_diamond, color=color.red, size=size.tiny)
+    label.new(x=h_time, y=h_val + offset_val, text="", xloc=xloc.bar_time, style=label.style_diamond, color=color.new(color.red, 25), size=size.tiny)
 
 if not na(l_time) and ta.change(l_time) != 0
-    label.new(x=l_time, y=l_val - offset_val, text="", xloc=xloc.bar_time, style=label.style_diamond, color=color.green, size=size.tiny)
+    label.new(x=l_time, y=l_val - offset_val, text="", xloc=xloc.bar_time, style=label.style_diamond, color=color.new(color.green, 25), size=size.tiny)
