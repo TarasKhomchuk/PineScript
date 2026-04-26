@@ -1,15 +1,21 @@
 //@version=5
 indicator("FVG Pulse Extender", overlay=true, max_boxes_count=500, max_lines_count=500)
 
-// --- Налаштування кольорів ---
+// --- Налаштування ---
+minFvgSize      = input.float(3.0, "Мін. розмір FVG", minval=0.0, step=0.1)
+
 bullColor       = input.color(color.new(#00ff08, 60), "Мала зона (Бичача)")
 bearColor       = input.color(color.new(#ff0000, 60), "Мала зона (Ведмежа)")
 rectColor       = input.color(color.new(color.gray, 85), "Широкий прямокутник")
+
 bullClosedColor = input.color(color.new(#00ff08, 90), "Тестована зона (Бичача)")
 bearClosedColor = input.color(color.new(#ff0000, 90), "Тестована зона (Ведмежа)")
+rectClosedColor = input.color(color.new(color.gray, 95), "Широкий прямокутник (Тестований)")
 
 showWhiteOutline = input.bool(true, "Показувати рамку прямокутника?")
-whiteColor       = input.color(color.new(color.white, 20), "Колір ліній")
+whiteColor       = input.color(color.new(color.white, 20), "Колір ліній (Активні)")
+closedWhiteColor = input.color(color.new(color.white, 80), "Колір ліній (Тестовані)") // НОВИЙ ПАРАМЕТР
+
 threshold        = input.float(0.5, "Поріг мітигації", minval=0.0, maxval=1.0)
 
 type FVG
@@ -18,13 +24,13 @@ type FVG
     line mid_ln     
     float top
     float btm
-    float start_open // ТУТ ми зафіксуємо ціну відкриття першої свічки
+    float start_open 
     bool is_bull
     bool active
 
 var fvg_array = array.new<FVG>()
 
-// 1. Детекція FVG (ВАША ВІРНА МАТЕМАТИКА)
+// 1. Детекція FVG (ВАША ОРИГІНАЛЬНА МАТЕМАТИКА)
 is_curr_bull = low[0] > high[2]
 is_curr_bear = high[0] < low[2]
 
@@ -36,50 +42,50 @@ float c_btm = is_curr_bull ? high[2] : is_curr_bear ? high[0] : na
 
 // --- Логіка керування блоками ---
 if is_curr_bull or is_curr_bear
-    bool extended = false
-    
-    if fvg_array.size() > 0
-        last_fvg = fvg_array.get(fvg_array.size() - 1)
+    if math.abs(c_top - c_btm) >= minFvgSize
+        bool extended = false
         
-        if last_fvg.active and last_fvg.is_bull == is_curr_bull
-            if (is_curr_bull and is_prev_bull) or (is_curr_bear and is_prev_bear)
-                // ОНОВЛЮЄМО ЗОНУ FVG
-                last_fvg.top := math.max(last_fvg.top, c_top)
-                last_fvg.btm := math.min(last_fvg.btm, c_btm)
-                
-                mid_p = (last_fvg.top + last_fvg.btm) / 2
-                
-                // Оновлюємо вузьку зону
-                last_fvg.zone_bx.set_top(last_fvg.top)
-                last_fvg.zone_bx.set_bottom(last_fvg.btm)
-                last_fvg.zone_bx.set_right(bar_index)
-                
-                // РОЗРАХУНОК ПРЯМОКУТНИКА: Використовуємо ЗАФІКСОВАНИЙ start_open
-                dist = math.abs(last_fvg.start_open - mid_p)
-                last_fvg.rect_bx.set_top(mid_p + dist)
-                last_fvg.rect_bx.set_bottom(mid_p - dist)
-                last_fvg.rect_bx.set_right(bar_index)
-                
-                if not na(last_fvg.mid_ln)
-                    last_fvg.mid_ln.set_xy1(last_fvg.zone_bx.get_left(), mid_p)
-                    last_fvg.mid_ln.set_xy2(bar_index, mid_p)
-                
-                extended := true
+        if fvg_array.size() > 0
+            last_fvg = fvg_array.get(fvg_array.size() - 1)
+            
+            if last_fvg.active and last_fvg.is_bull == is_curr_bull
+                if (is_curr_bull and is_prev_bull) or (is_curr_bear and is_prev_bear)
+                    last_fvg.top := math.max(last_fvg.top, c_top)
+                    last_fvg.btm := math.min(last_fvg.btm, c_btm)
+                    
+                    mid_p = (last_fvg.top + last_fvg.btm) / 2
+                    
+                    dist = math.abs(last_fvg.start_open - mid_p)
+                    v_top = mid_p + dist
+                    v_btm = mid_p - dist
+                    
+                    last_fvg.zone_bx.set_top(last_fvg.top)
+                    last_fvg.zone_bx.set_bottom(last_fvg.btm)
+                    last_fvg.zone_bx.set_right(bar_index)
+                    
+                    last_fvg.rect_bx.set_top(v_top)
+                    last_fvg.rect_bx.set_bottom(v_btm)
+                    last_fvg.rect_bx.set_right(bar_index)
+                    
+                    if not na(last_fvg.mid_ln)
+                        last_fvg.mid_ln.set_xy1(last_fvg.zone_bx.get_left(), mid_p)
+                        last_fvg.mid_ln.set_xy2(bar_index, mid_p)
+                    
+                    extended := true
 
-    if not extended
-        mid_p = (c_top + c_btm) / 2
-        // Фіксуємо відкриття свічки №1 (середня в патерні [0,1,2])
-        first_open = open[1] 
-        
-        dist = math.abs(first_open - mid_p)
-        v_top = mid_p + dist
-        v_btm = mid_p - dist
-        
-        box z_bx = box.new(bar_index - 2, c_top, bar_index, c_btm, border_color=na, bgcolor=is_curr_bull ? bullColor : bearColor)
-        box r_bx = box.new(bar_index - 2, v_top, bar_index, v_btm, border_color=showWhiteOutline ? whiteColor : na, bgcolor=rectColor)
-        line m_ln = line.new(bar_index - 2, mid_p, bar_index, mid_p, color=whiteColor, style=line.style_dashed)
-        
-        fvg_array.push(FVG.new(z_bx, r_bx, m_ln, c_top, c_btm, first_open, is_curr_bull, true))
+        if not extended
+            mid_p = (c_top + c_btm) / 2
+            first_open = open[1] 
+            
+            dist = math.abs(first_open - mid_p)
+            v_top = mid_p + dist
+            v_btm = mid_p - dist
+            
+            box z_bx = box.new(bar_index - 2, c_top, bar_index, c_btm, border_color=na, bgcolor=is_curr_bull ? bullColor : bearColor)
+            box r_bx = box.new(bar_index - 2, v_top, bar_index, v_btm, border_color=showWhiteOutline ? whiteColor : na, bgcolor=rectColor)
+            line m_ln = line.new(bar_index - 2, mid_p, bar_index, mid_p, color=whiteColor, style=line.style_dashed)
+            
+            fvg_array.push(FVG.new(z_bx, r_bx, m_ln, c_top, c_btm, first_open, is_curr_bull, true))
 
 // --- Мітигація ---
 if fvg_array.size() > 0
@@ -96,12 +102,22 @@ if fvg_array.size() > 0
                 if low <= (element.top - zone_h * threshold)
                     element.active := false
                     element.zone_bx.set_bgcolor(bullClosedColor)
-                    element.rect_bx.set_bgcolor(color.new(color.gray, 95))
+                    element.rect_bx.set_bgcolor(rectClosedColor)
+                    // ОНОВЛЕННЯ КОЛЬОРУ ЛІНІЙ
+                    if showWhiteOutline
+                        element.rect_bx.set_border_color(closedWhiteColor)
+                    if not na(element.mid_ln)
+                        element.mid_ln.set_color(closedWhiteColor)
             else
                 if high >= (element.btm + zone_h * threshold)
                     element.active := false
                     element.zone_bx.set_bgcolor(bearClosedColor)
-                    element.rect_bx.set_bgcolor(color.new(color.gray, 95))
+                    element.rect_bx.set_bgcolor(rectClosedColor)
+                    // ОНОВЛЕННЯ КОЛЬОРУ ЛІНІЙ
+                    if showWhiteOutline
+                        element.rect_bx.set_border_color(closedWhiteColor)
+                    if not na(element.mid_ln)
+                        element.mid_ln.set_color(closedWhiteColor)
 
 if fvg_array.size() > 100
     deleted = fvg_array.remove(0)
