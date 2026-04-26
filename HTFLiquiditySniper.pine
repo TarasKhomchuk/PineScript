@@ -1,0 +1,93 @@
+//@version=6
+indicator("HTF Liquidity Sniper", overlay = true)
+
+// --- 1. Вибір HTF ---
+get_htf_tf() =>
+    int mins = timeframe.isintraday ? timeframe.multiplier : 0
+    timeframe.isseconds or (mins > 0 and mins <= 1) ? "5" :
+     mins <= 5   ? "15"  :
+     mins <= 15  ? "30"  :
+     mins <= 30  ? "60"  :
+     mins <= 60  ? "240" :
+     timeframe.isdaily ? "W" : "M"
+
+string htf_string = get_htf_tf()
+
+// --- 2. Фрактали (Беремо закриті дані, щоб не було перемальовування) ---
+is_f_top = high[2] > high[4] and high[2] > high[3] and high[2] > high[1] and high[2] > high[0]
+is_f_bot = low[2] < low[4] and low[2] < low[3] and low[2] < low[1] and low[2] < low[0]
+
+[htf_high, htf_low, top_det, bot_det] = request.security(syminfo.tickerid, htf_string, [high[2], low[2], is_f_top, is_f_bot], lookahead = barmerge.lookahead_off)
+
+// --- 3. Активні рівні ---
+var float active_high = na
+var float active_low = na
+
+if top_det
+    active_high := htf_high
+if bot_det
+    active_low := htf_low
+
+// --- 4. Логіка сигналів (Перевірка ТІЛЬКИ на закритті бару) ---
+var int wait_buy = 0
+var int wait_sell = 0
+var float s_open = na
+
+bool sig_buy = false
+bool sig_sell = false
+
+// Використовуємо barstate.isconfirmed, щоб сигнал не стрибав під час формування свічки
+if barstate.isconfirmed
+    // BUY LOGIC
+    if not na(active_low) and open > active_low and low <= active_low
+        if close > open // Сценарій №1: Свічка закрилася ЗЕЛЕНОЮ
+            sig_buy := true
+            active_low := na
+            wait_buy := 0
+        else // Сценарій №2: Свічка закрилася ЧЕРВОНОЮ (початок очікування)
+            wait_buy := 1
+            s_open := open
+            active_low := na
+    
+    else if wait_buy == 1 // Очікування S+1
+        if close > open
+            wait_buy := 2
+        else
+            wait_buy := 0 // Анулювання, якщо не зелена
+            
+    else if wait_buy == 2 // Очікування S+2
+        if close > open and close > s_open
+            sig_buy := true
+        wait_buy := 0
+
+    // SELL LOGIC
+    if not na(active_high) and open < active_high and high >= active_high
+        if close < open // Сценарій №1: Свічка закрилася ЧЕРВОНОЮ
+            sig_sell := true
+            active_high := na
+            wait_sell := 0
+        else // Сценарій №2: Свічка закрилася ЗЕЛЕНОЮ (початок очікування)
+            wait_sell := 1
+            s_open := open
+            active_high := na
+            
+    else if wait_sell == 1
+        if close < open
+            wait_sell := 2
+        else
+            wait_sell := 0
+            
+    else if wait_sell == 2
+        if close < open and close < s_open
+            sig_sell := true
+        wait_sell := 0
+
+// Очищення рівнів при пробитті без сигналу
+if not na(active_high) and close > active_high
+    active_high := na
+if not na(active_low) and close < active_low
+    active_low := na
+
+// --- 5. Візуалізація ---
+plotshape(sig_buy,  style=shape.triangleup,   location=location.belowbar, color=color.new(color.green, 0), size=size.small)
+plotshape(sig_sell, style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),   size=size.small)
