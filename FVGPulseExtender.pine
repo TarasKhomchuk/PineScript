@@ -1,5 +1,5 @@
 //@version=5
-indicator("FVG Pulse Extender", overlay=true, max_boxes_count=500)
+indicator("FVG Pulse Extender", overlay=true, max_boxes_count=500, max_lines_count=500) // Додано max_lines_count
 
 // --- Налаштування кольорів ---
 bullColor       = input.color(color.new(#00ff08, 70), "Бичачий FVG (Активний)")
@@ -15,9 +15,9 @@ whiteColor       = input.color(color.new(color.white, 20), "Колір біли�
 threshold = input.float(0.5, "Поріг закриття (0.1 - 1.0)", minval=0.0, maxval=1.0)
 
 type FVG
-    box bx          // Основний зафарбований бокс
-    box outline_bx  // Білий контурний бокс
-    line mid_ln     // Біла пунктирна лінія середини
+    box bx          
+    box outline_bx  
+    line mid_ln     
     float top
     float btm
     bool is_bull
@@ -43,11 +43,11 @@ if is_curr_bull or is_curr_bear
         last_fvg = fvg_array.get(fvg_array.size() - 1)
         
         if last_fvg.active and last_fvg.is_bull == is_curr_bull
+            // Перевірка на "сусідні" бари для об'єднання
             if (is_curr_bull and is_prev_bull) or (is_curr_bear and is_prev_bear)
                 last_fvg.top := math.max(last_fvg.top, c_top)
                 last_fvg.btm := math.min(last_fvg.btm, c_btm)
                 
-                // Оновлюємо бокси
                 last_fvg.bx.set_top(last_fvg.top)
                 last_fvg.bx.set_bottom(last_fvg.btm)
                 last_fvg.bx.set_right(bar_index)
@@ -57,7 +57,6 @@ if is_curr_bull or is_curr_bear
                     last_fvg.outline_bx.set_bottom(last_fvg.btm)
                     last_fvg.outline_bx.set_right(bar_index)
                 
-                // Оновлюємо лінію середини (50%)
                 if not na(last_fvg.mid_ln)
                     mid_price = (last_fvg.top + last_fvg.btm) / 2
                     last_fvg.mid_ln.set_xy1(last_fvg.bx.get_left(), mid_price)
@@ -71,13 +70,11 @@ if is_curr_bull or is_curr_bear
         
         box new_bx   = box.new(bar_index - 2, c_top, bar_index, c_btm, border_color=na, bgcolor=current_color)
         box white_bx = showWhiteOutline ? box.new(bar_index - 2, c_top, bar_index, c_btm, border_color=whiteColor, bgcolor=color.new(color.white, 100)) : na
-        
-        // Створюємо пунктирну лінію
-        line m_ln = showMidLine ? line.new(bar_index - 2, mid_p, bar_index, mid_p, color=whiteColor, style=line.style_dashed) : na
+        line m_ln    = showMidLine ? line.new(bar_index - 2, mid_p, bar_index, mid_p, color=whiteColor, style=line.style_dashed) : na
         
         fvg_array.push(FVG.new(new_bx, white_bx, m_ln, c_top, c_btm, is_curr_bull, true))
 
-// --- Візуальне оновлення та мітигація ---
+/// --- Візуальне оновлення та мітигація ---
 if fvg_array.size() > 0
     for i = fvg_array.size() - 1 to 0
         element = fvg_array.get(i)
@@ -93,13 +90,26 @@ if fvg_array.size() > 0
                 if low <= (element.top - zone_range * threshold)
                     element.active := false
                     element.bx.set_bgcolor(bullClosedColor)
-                    element.mid_ln.set_color(color.new(whiteColor, 80)) // Робимо тьмяною
+                    // ТУТ ЗМІНИ:
+                    if not na(element.outline_bx)
+                        element.outline_bx.set_border_color(color.new(whiteColor, 80)) // Робимо рамку тьмяною
+                    if not na(element.mid_ln)
+                        element.mid_ln.set_color(color.new(whiteColor, 80)) 
             else
                 if high >= (element.btm + zone_range * threshold)
                     element.active := false
                     element.bx.set_bgcolor(bearClosedColor)
-                    element.mid_ln.set_color(color.new(whiteColor, 80))
+                    // ТУТ ЗМІНИ:
+                    if not na(element.outline_bx)
+                        element.outline_bx.set_border_color(color.new(whiteColor, 80)) // Робимо рамку тьмяною
+                    if not na(element.mid_ln)
+                        element.mid_ln.set_color(color.new(whiteColor, 80))
 
-// Оптимізація
+// Оптимізація (видаляємо об'єкти з графіку перед видаленням з масиву)
 if fvg_array.size() > 100
-    fvg_array.remove(0)
+    deleted_fvg = fvg_array.remove(0)
+    deleted_fvg.bx.delete()
+    if not na(deleted_fvg.outline_bx)
+        deleted_fvg.outline_bx.delete()
+    if not na(deleted_fvg.mid_ln)
+        deleted_fvg.mid_ln.delete()
