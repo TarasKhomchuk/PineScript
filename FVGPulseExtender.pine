@@ -1,16 +1,21 @@
 //@version=5
-indicator("FVG Pulse Extender - Colored", overlay=true, max_boxes_count=500)
+indicator("FVG Pulse Extender", overlay=true, max_boxes_count=500)
 
-// --- Ustawienia Kolorów ---
-bullColor       = input.color(color.new(#00ff08, 70), "Byczy FVG (Aktywny)")
-bearColor       = input.color(color.new(#ff0000, 70), "Niedźwiedzi FVG (Aktywny)")
-bullClosedColor = input.color(color.new(#00ff08, 90), "Byczy FVG (Przetestowany)")
-bearClosedColor = input.color(color.new(#ff0000, 90), "Niedźwiedzi FVG (Przetestowany)")
+// --- Налаштування кольорів ---
+bullColor       = input.color(color.new(#00ff08, 70), "Бичачий FVG (Активний)")
+bearColor       = input.color(color.new(#ff0000, 70), "Ведмежий FVG (Активний)")
+bullClosedColor = input.color(color.new(#00ff08, 90), "Бичачий FVG (Тестований)")
+bearClosedColor = input.color(color.new(#ff0000, 90), "Ведмежий FVG (Тестований)")
 
-threshold       = input.float(0.5, "Próg domknięcia (0.1 - 1.0)", minval=0.0, maxval=1.0)
+// Налаштування для БІЛИХ прямокутників
+showWhiteOutline = input.bool(true, "Показувати білу рамку?")
+whiteOutlineColor = input.color(color.new(color.white, 20), "Колір рамки")
+
+threshold = input.float(0.5, "Поріг закриття (0.1 - 1.0)", minval=0.0, maxval=1.0)
 
 type FVG
-    box bx
+    box bx          // Основний зафарбований бокс
+    box outline_bx  // Білий контурний бокс
     float top
     float btm
     bool is_bull
@@ -18,7 +23,7 @@ type FVG
 
 var fvg_array = array.new<FVG>()
 
-// 1. Detekcja FVG na bieżącej i poprzedniej świecy
+// 1. Детекція FVG
 is_curr_bull = low[0] > high[2]
 is_curr_bear = high[0] < low[2]
 
@@ -28,48 +33,67 @@ is_prev_bear = high[1] < low[3]
 float c_top = is_curr_bull ? low[0] : is_curr_bear ? low[2] : na
 float c_btm = is_curr_bull ? high[2] : is_curr_bear ? high[0] : na
 
-// --- Logika zarządzania blokami ---
+// --- Логіка керування блоками ---
 if is_curr_bull or is_curr_bear
     bool extended = false
     
     if fvg_array.size() > 0
         last_fvg = fvg_array.get(fvg_array.size() - 1)
         
-        // Rozszerzanie: jeśli impuls trwa (poprzednia świeca też miała FVG w tym samym kierunku)
+        // Розширення існуючої зони
         if last_fvg.active and last_fvg.is_bull == is_curr_bull
             if (is_curr_bull and is_prev_bull) or (is_curr_bear and is_prev_bear)
                 last_fvg.top := math.max(last_fvg.top, c_top)
                 last_fvg.btm := math.min(last_fvg.btm, c_btm)
                 
+                // Оновлюємо основний бокс
                 last_fvg.bx.set_top(last_fvg.top)
                 last_fvg.bx.set_bottom(last_fvg.btm)
                 last_fvg.bx.set_right(bar_index)
+                
+                // Оновлюємо білу рамку
+                if not na(last_fvg.outline_bx)
+                    last_fvg.outline_bx.set_top(last_fvg.top)
+                    last_fvg.outline_bx.set_bottom(last_fvg.btm)
+                    last_fvg.outline_bx.set_right(bar_index)
+                
                 extended := true
 
-    // Nowy blok: jeśli impuls się zaczął lub zmienił kierunek
+    // Створення нової зони
     if not extended
         color current_color = is_curr_bull ? bullColor : bearColor
+        
+        // 1. Створюємо фоновий колір (без рамки)
         box new_bx = box.new(bar_index - 2, c_top, bar_index, c_btm, border_color=na, bgcolor=current_color)
-        fvg_array.push(FVG.new(new_bx, c_top, c_btm, is_curr_bull, true))
+        
+        // 2. Створюємо БІЛУ РАМКУ (без фону)
+        box white_bx = showWhiteOutline ? box.new(bar_index - 2, c_top, bar_index, c_btm, border_color=whiteOutlineColor, border_width=1, bgcolor=color.new(color.white, 100)) : na
+        
+        fvg_array.push(FVG.new(new_bx, white_bx, c_top, c_btm, is_curr_bull, true))
 
-// --- Aktualizacja wizualna i mitygacja ---
+// --- Візуальне оновлення та мітигація ---
 if fvg_array.size() > 0
     for i = fvg_array.size() - 1 to 0
         element = fvg_array.get(i)
         if element.active
             element.bx.set_right(bar_index)
+            if not na(element.outline_bx)
+                element.outline_bx.set_right(bar_index)
             
-            // Logika domknięcia (Mitigation)
             zone_range = element.top - element.btm
             if element.is_bull
                 if low <= (element.top - zone_range * threshold)
                     element.active := false
-                    element.bx.set_bgcolor(bullClosedColor) // Zmiana na przygaszony zielony
+                    element.bx.set_bgcolor(bullClosedColor)
+                    if not na(element.outline_bx)
+                        element.outline_bx.set_border_color(color.new(whiteOutlineColor, 80)) // Робимо рамку тьмяною
             else
                 if high >= (element.btm + zone_range * threshold)
                     element.active := false
-                    element.bx.set_bgcolor(bearClosedColor) // Zmiana na przygaszony czerwony
+                    element.bx.set_bgcolor(bearClosedColor)
+                    if not na(element.outline_bx)
+                        element.outline_bx.set_border_color(color.new(whiteOutlineColor, 80))
 
-// Optymalizacja
+// Оптимізація
 if fvg_array.size() > 100
     fvg_array.remove(0)
