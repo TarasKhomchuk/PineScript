@@ -1,0 +1,75 @@
+//@version=5
+indicator("FVG Pulse Extender - Colored", overlay=true, max_boxes_count=500)
+
+// --- Ustawienia Kolorów ---
+bullColor       = input.color(color.new(#00ff08, 70), "Byczy FVG (Aktywny)")
+bearColor       = input.color(color.new(#ff0000, 70), "Niedźwiedzi FVG (Aktywny)")
+bullClosedColor = input.color(color.new(#00ff08, 90), "Byczy FVG (Przetestowany)")
+bearClosedColor = input.color(color.new(#ff0000, 90), "Niedźwiedzi FVG (Przetestowany)")
+
+threshold       = input.float(0.5, "Próg domknięcia (0.1 - 1.0)", minval=0.0, maxval=1.0)
+
+type FVG
+    box bx
+    float top
+    float btm
+    bool is_bull
+    bool active
+
+var fvg_array = array.new<FVG>()
+
+// 1. Detekcja FVG na bieżącej i poprzedniej świecy
+is_curr_bull = low[0] > high[2]
+is_curr_bear = high[0] < low[2]
+
+is_prev_bull = low[1] > high[3]
+is_prev_bear = high[1] < low[3]
+
+float c_top = is_curr_bull ? low[0] : is_curr_bear ? low[2] : na
+float c_btm = is_curr_bull ? high[2] : is_curr_bear ? high[0] : na
+
+// --- Logika zarządzania blokami ---
+if is_curr_bull or is_curr_bear
+    bool extended = false
+    
+    if fvg_array.size() > 0
+        last_fvg = fvg_array.get(fvg_array.size() - 1)
+        
+        // Rozszerzanie: jeśli impuls trwa (poprzednia świeca też miała FVG w tym samym kierunku)
+        if last_fvg.active and last_fvg.is_bull == is_curr_bull
+            if (is_curr_bull and is_prev_bull) or (is_curr_bear and is_prev_bear)
+                last_fvg.top := math.max(last_fvg.top, c_top)
+                last_fvg.btm := math.min(last_fvg.btm, c_btm)
+                
+                last_fvg.bx.set_top(last_fvg.top)
+                last_fvg.bx.set_bottom(last_fvg.btm)
+                last_fvg.bx.set_right(bar_index)
+                extended := true
+
+    // Nowy blok: jeśli impuls się zaczął lub zmienił kierunek
+    if not extended
+        color current_color = is_curr_bull ? bullColor : bearColor
+        box new_bx = box.new(bar_index - 2, c_top, bar_index, c_btm, border_color=na, bgcolor=current_color)
+        fvg_array.push(FVG.new(new_bx, c_top, c_btm, is_curr_bull, true))
+
+// --- Aktualizacja wizualna i mitygacja ---
+if fvg_array.size() > 0
+    for i = fvg_array.size() - 1 to 0
+        element = fvg_array.get(i)
+        if element.active
+            element.bx.set_right(bar_index)
+            
+            // Logika domknięcia (Mitigation)
+            zone_range = element.top - element.btm
+            if element.is_bull
+                if low <= (element.top - zone_range * threshold)
+                    element.active := false
+                    element.bx.set_bgcolor(bullClosedColor) // Zmiana na przygaszony zielony
+            else
+                if high >= (element.btm + zone_range * threshold)
+                    element.active := false
+                    element.bx.set_bgcolor(bearClosedColor) // Zmiana na przygaszony czerwony
+
+// Optymalizacja
+if fvg_array.size() > 100
+    fvg_array.remove(0)
